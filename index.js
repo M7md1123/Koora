@@ -114,3 +114,15 @@ client.login(config.discordToken).catch((err) => {
   console.error('❌ Discord login failed:', err.message);
   process.exit(1);
 });
+
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+  res.send('Koora Bot is running 24/7!');
+});
+
+app.listen(PORT, () => {
+  console.log(`Web server is listening on port ${PORT}`);
+});
