@@ -75,13 +75,22 @@ async function runTest() {
 }
 
 client.once(Events.ClientReady, async (c) => {
-  console.log(`✅ Logged in as ${c.user.tag}`);
+    console.log(`✅ Logged in as ${c.user.tag}`);
 
-  if (testMode) {
-    await runTest();
-    await shutdown(0);
-    return;
-  }
+    // أضف هذا السطر هنا ليقوم بإرسال رسالة تجريبية فوراً عند التشغيل
+    await send(embeds.scheduleEmbed([{
+        fixture: { id: 0, timestamp: Math.floor(Date.now() / 1000) + 3600, status: { short: '2H', elapsed: 67 }, venue: { name: 'Kingdom Arena' } },
+        league: { name: 'Koora Bot Ready', round: 'Live Test', logo: '' },
+        teams: { home: { id: 1, name: 'Al Hilal', logo: '' }, away: { id: 2, name: 'Al Nassr', logo: '' } },
+        goals: { home: 2, away: 1 },
+        score: {},
+    }], 'البوت شغال ومتصل بنجاح!'));
+
+    if (testMode) {
+        await runTest();
+        await shutdown(0);
+        return;
+    }
 
   tracker.init();
   await tracker.refreshSchedule();
