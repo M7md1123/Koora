@@ -1,0 +1,20 @@
+{
+  "name": "saudi-football-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for live Saudi football scores (Roshn Saudi League, King's Cup, Saudi National Team)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test-embed": "node index.js --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3"
+  },
+  "license": "MIT"
+}
