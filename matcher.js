@@ -48,6 +48,7 @@ async function apiGet(endpoint, params = {}, attempt = 1) {
 // A fixture is tracked if it's in one of our leagues OR involves one of our teams (national team).
 function isTracked(f) {
   return (
+    f.league.name.includes('Saudi') || 
     config.leagueIds.includes(f.league.id) ||
     config.teamIds.includes(f.teams.home.id) ||
     config.teamIds.includes(f.teams.away.id)
