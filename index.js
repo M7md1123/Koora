@@ -78,6 +78,7 @@ client.once(Events.ClientReady, async (c) => {
     console.log(`✅ Logged in as ${c.user.tag}`);
 
     // أضف هذا السطر هنا ليقوم بإرسال رسالة تجريبية فوراً عند التشغيل
+    /*
     await send(embeds.scheduleEmbed([{
         fixture: { id: 0, timestamp: Math.floor(Date.now() / 1000) + 3600, status: { short: '2H', elapsed: 67 }, venue: { name: 'Kingdom Arena' } },
         league: { name: 'Koora Bot Ready', round: 'Live Test', logo: '' },
@@ -85,6 +86,7 @@ client.once(Events.ClientReady, async (c) => {
         goals: { home: 2, away: 1 },
         score: {},
     }], 'البوت شغال ومتصل بنجاح!'));
+    */
 
     if (testMode) {
         await runTest();
