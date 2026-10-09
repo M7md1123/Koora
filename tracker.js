@@ -116,15 +116,7 @@ async function checkReminders(send) {
 
 // Only call the live endpoint when it makes sense (saves API quota).
 function shouldPoll() {
-  if (Object.keys(state.active).length) return true;
-  const now = Math.floor(Date.now() / 1000);
-  return scheduleCache.some((f) => {
-    const st = f.fixture.status.short;
-    if (FINISHED.includes(st) || DEAD.includes(st)) return false;
-    if (state.flags[`ft:${f.fixture.id}`]) return false;
-    const ts = f.fixture.timestamp;
-    return now >= ts - 10 * 60 && now <= ts + 3.5 * 60 * 60;
-  });
+  return true;
 }
 
 // ---------- Live handling ----------
