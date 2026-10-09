@@ -1,8 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const config = require('./config');
 const matcher = require('./matcher');
 const embeds = require('./embeds');
+const news = require('./news');
 
 const { FINISHED_STATUSES: FINISHED, DEAD_STATUSES: DEAD } = matcher;
 
@@ -12,7 +14,9 @@ const STALE_ACTIVE_MS = 6 * 60 * 60 * 1000;
 // state.events : posted event keys      -> timestamp
 // state.flags  : one-time notifications -> timestamp (kickoff, ht, ft, reminder, daily, seen)
 // state.active : fixtures currently being followed -> last time seen live
-let state = { events: {}, flags: {}, active: {} };
+// state.news   : posted news keys     -> timestamp
+let state = { events: {}, flags: {}, active: {}, news: {} };
+let scheduleLoadedAt = 0; // 0 = schedule never loaded successfully
 let scheduleCache = [];
 let running = false;
 
@@ -21,12 +25,12 @@ let running = false;
 function loadState() {
   try {
     const raw = JSON.parse(fs.readFileSync(config.stateFile, 'utf8'));
-    state = { events: raw.events || {}, flags: raw.flags || {}, active: raw.active || {} };
+    state = { events: raw.events || {}, flags: raw.flags || {}, active: raw.active || {}, news: raw.news || {} };
   } catch (err) {
     if (err.code !== 'ENOENT') console.warn('⚠️ Could not read state file, starting fresh:', err.message);
   }
   const cutoff = Date.now() - RETENTION_MS;
-  for (const bucket of ['events', 'flags', 'active']) {
+  for (const bucket of ['events', 'flags', 'active', 'news']) {
     for (const [k, v] of Object.entries(state[bucket])) {
       if (v < cutoff) delete state[bucket][k];
     }
@@ -85,8 +89,10 @@ function eventKey(fixtureId, ev) {
 
 async function refreshSchedule() {
   try {
+    await matcher.loadSaudiTeams();
     const fixtures = await matcher.getFixturesByDate(todayStr());
     scheduleCache = fixtures.sort((a, b) => a.fixture.timestamp - b.fixture.timestamp);
+    scheduleLoadedAt = Date.now();
     console.log(`📅 Schedule refreshed: ${scheduleCache.length} tracked match(es) today`);
   } catch (err) {
     console.error('❌ Schedule refresh failed (keeping old cache):', err.message);
@@ -114,9 +120,21 @@ async function checkReminders(send) {
   }
 }
 
-// Only call the live endpoint when it makes sense (saves API quota).
+// Only call the live endpoint when it makes sense (saves API quota):
+//  - a followed match is still active, or
+//  - a tracked match is about to start / probably still running, or
+//  - the schedule never loaded (fail-open: better to poll than to stay silent).
 function shouldPoll() {
-  return true;
+  if (config.alwaysPoll) return true;
+  if (Object.keys(state.active).length) return true;
+  if (!scheduleLoadedAt) return true;
+  const now = Math.floor(Date.now() / 1000);
+  const lead = config.pollLeadMinutes * 60;
+  const tail = config.pollTailMinutes * 60;
+  return scheduleCache.some((f) => {
+    const t = f.fixture.timestamp;
+    return now >= t - lead && now <= t + tail && !DEAD.includes(f.fixture.status.short);
+  });
 }
 
 // ---------- Live handling ----------
@@ -189,6 +207,62 @@ async function pollLive(send) {
   saveState();
 }
 
+// ---------- News ----------
+
+const newsKeys = (item) => [
+  `link:${crypto.createHash('md5').update(item.id || item.link).digest('hex')}`,
+  `title:${item.titleKey}`,
+];
+const isNewsSeen = (item) => newsKeys(item).some((k) => state.news[k]);
+const markNews = (item) => newsKeys(item).forEach((k) => (state.news[k] = Date.now()));
+
+// Posts the newest unseen items (max NEWS_MAX_PER_RUN per run, oldest first). Older unseen items are
+// marked as seen without posting so a first run / long downtime never floods the channel.
+async function postNews(sendNews) {
+  if (!config.news.enabled) return;
+  const items = await news.fetchLatest();
+  const fresh = items.filter((i) => !isNewsSeen(i));
+  if (!fresh.length) return;
+
+  const toPost = fresh.slice(0, config.news.maxPerRun).reverse(); // fresh is newest-first
+  const skipped = fresh.slice(config.news.maxPerRun);
+  skipped.forEach(markNews);
+
+  let sent = 0;
+  for (const item of toPost) {
+    if (!item.image) item.image = await news.fetchOgImage(item.link);
+    const ok = await sendNews(embeds.newsEmbed(item));
+    if (!ok) break; // retry next run
+    markNews(item);
+    sent++;
+  }
+  saveState();
+  console.log(`📰 News: ${sent} posted, ${skipped.length} skipped, ${fresh.length - skipped.length - sent} pending retry`);
+}
+
+let newsRunning = false;
+async function newsTick(sendNews) {
+  if (newsRunning) return;
+  newsRunning = true;
+  try {
+    await postNews(sendNews);
+  } catch (err) {
+    console.error('❌ News cycle failed:', err.message);
+  } finally {
+    newsRunning = false;
+  }
+}
+
+// If the bot starts after the daily time (restart / late deploy) and today's post is missing, post it now.
+async function catchUpDaily(send) {
+  const [minField, hourField] = config.dailyCron.trim().split(/\s+/);
+  const hh = Number.isFinite(Number(hourField)) ? Number(hourField) : 8;
+  const mm = Number.isFinite(Number(minField)) ? Number(minField) : 0;
+  const nowParts = new Date().toLocaleTimeString('en-GB', { timeZone: config.timezone, hour12: false }).split(':').map(Number);
+  const pastDaily = nowParts[0] * 60 + nowParts[1] >= hh * 60 + mm;
+  if (pastDaily && !state.flags[`daily:${todayStr()}`]) await postDailySchedule(send);
+}
+
 // ---------- Entry points used by index.js ----------
 
 function init() {
@@ -209,4 +283,4 @@ async function tick(send) {
   }
 }
 
-module.exports = { init, refreshSchedule, postDailySchedule, tick };
+module.exports = { init, refreshSchedule, postDailySchedule, catchUpDaily, tick, newsTick };

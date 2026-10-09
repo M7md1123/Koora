@@ -45,21 +45,50 @@ async function apiGet(endpoint, params = {}, attempt = 1) {
   }
 }
 
-// A fixture is tracked if it's in one of our leagues OR involves one of our teams (national team).
-function isTracked(f) {
-  const country = (f.league.country || '').toLowerCase();
-  
-  // حل ضمان: إذا كانت الدولة تحتوي على Saudi، اعتمدها فوراً بدون شروط إضافية
-  if (country.includes('saudi')) {
-    return true;
+// Saudi clubs (any competition: AFC Champions League, Club World Cup...) are discovered once and cached.
+let saudiTeamIds = new Set();
+let saudiTeamsLoadedAt = 0;
+const TEAMS_TTL_MS = 24 * 60 * 60 * 1000;
+
+async function loadSaudiTeams(force = false) {
+  if (!force && saudiTeamIds.size && Date.now() - saudiTeamsLoadedAt < TEAMS_TTL_MS) return saudiTeamIds;
+  try {
+    const rows = await apiGet('/teams', { country: config.country });
+    const ids = rows.map((r) => r.team?.id).filter(Boolean);
+    if (ids.length) {
+      saudiTeamIds = new Set(ids);
+      saudiTeamsLoadedAt = Date.now();
+      console.log(`🏟️ Loaded ${ids.length} ${config.country} teams for filtering`);
+    }
+  } catch (err) {
+    console.error('⚠️ Could not load Saudi team list (league/country filter still works):', err.message);
   }
-  
-  // الاحتفاظ بالشروط السادسة كاحتياط للأندية أو الدوريات المضافة يدوياً
+  return saudiTeamIds;
+}
+
+// A fixture is tracked if it is in a Saudi league/cup, one of our league IDs,
+// involves ANY Saudi club (continental games) or one of our extra teams (national team).
+function isTracked(f) {
+  const country = (f.league?.country || '').toLowerCase().replace(/[^a-z]/g, '');
+  if (country.includes('saudi')) return true;
+  const home = f.teams?.home?.id;
+  const away = f.teams?.away?.id;
   return (
-    config.leagueIds.includes(f.league.id) ||
-    config.teamIds.includes(f.teams.home.id) ||
-    config.teamIds.includes(f.teams.away.id)
+    config.leagueIds.includes(f.league?.id) ||
+    config.teamIds.includes(home) ||
+    config.teamIds.includes(away) ||
+    saudiTeamIds.has(home) ||
+    saudiTeamIds.has(away)
   );
+}
+
+// Startup diagnostic: confirms the key/provider work and shows quota. /status does not use quota.
+async function checkApi() {
+  const res = await http.get('/status');
+  if (hasApiErrors(res.data.errors)) throw new Error(JSON.stringify(res.data.errors));
+  const r = res.data.response || {};
+  const req = r.requests || {};
+  return { plan: r.subscription?.plan, used: req.current, limit: req.limit_day };
 }
 
 // All live matches in ONE request, filtered locally. Live fixtures usually include `events` already.
@@ -88,6 +117,8 @@ module.exports = {
   FINISHED_STATUSES,
   DEAD_STATUSES,
   isTracked,
+  loadSaudiTeams,
+  checkApi,
   getLiveFixtures,
   getFixturesByDate,
   getFixtureById,
