@@ -64,12 +64,15 @@ function reminderEmbed(f) {
     .setTitle('⏰ مباراة قريبة!')
     .setDescription(`**${f.teams.home.name}** × **${f.teams.away.name}**\nتنطلق <t:${f.fixture.timestamp}:R> (<t:${f.fixture.timestamp}:t>)`);
   if (f.fixture.venue?.name) e.addFields({ name: '🏟️ الملعب', value: f.fixture.venue.name, inline: true });
+  if (f.teams?.home?.logo) e.setThumbnail(f.teams.home.logo);
   return withLeague(e, f);
 }
 
 function kickoffEmbed(f) {
   const e = base(COLORS.main).setTitle('🟢 انطلقت المباراة!').setDescription(scoreLine(f));
   if (f.fixture.venue?.name) e.addFields({ name: '🏟️ الملعب', value: f.fixture.venue.name, inline: true });
+
+  if (f.teams?.home?.logo) e.setThumbnail(f.teams.home.logo);
   return withLeague(e, f);
 }
 
@@ -120,6 +123,7 @@ function fulltimeEmbed(f, events) {
   const e = base(COLORS.info).setTitle('🏁 نهاية المباراة').setDescription(scoreLine(f) + note);
   const goals = goalsList(events);
   if (goals) e.addFields({ name: 'الأهداف', value: goals });
+  if (f.teams?.home?.logo) e.setThumbnail(f.teams.home.logo);
   return withLeague(e, f);
 }
 
